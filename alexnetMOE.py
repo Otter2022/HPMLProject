@@ -7,7 +7,6 @@ import time
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
-# Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -27,7 +26,6 @@ def get_train_valid_loader(data_dir, batch_size, augment, random_seed, valid_siz
         normalize,
     ])
 
-    # Define training transforms
     if augment:
         train_transform = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
@@ -42,7 +40,6 @@ def get_train_valid_loader(data_dir, batch_size, augment, random_seed, valid_siz
             normalize,
         ])
 
-    # Load the CIFAR10 dataset for training
     train_dataset = datasets.CIFAR10(
         root=data_dir, train=True,
         download=True, transform=train_transform,
@@ -212,13 +209,11 @@ def measure_inference_time(model, dummy_input, num_runs=100, warmup_runs=10):
     """
     model.eval()
     with torch.no_grad():
-        # Warm-up runs
         for _ in range(warmup_runs):
             _ = model(dummy_input)
             if dummy_input.device.type == "cuda":
                 torch.cuda.synchronize()
 
-        # Timing runs
         start_time = time.time()
         for _ in range(num_runs):
             _ = model(dummy_input)
@@ -231,7 +226,6 @@ def measure_inference_time(model, dummy_input, num_runs=100, warmup_runs=10):
 
 
 def main():
-    # Configuration
     data_dir = "./data"
     batch_size = 64
     random_seed = 1
@@ -239,24 +233,19 @@ def main():
     num_epochs = 20
     learning_rate = 0.005
 
-    # Load data
     train_loader, valid_loader = get_train_valid_loader(
         data_dir, batch_size, augment=False, random_seed=random_seed
     )
     test_loader = get_test_loader(data_dir, batch_size)
 
-    # Initialize the model, loss function, and optimizer
     model = AlexNet(num_classes=num_classes).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=0.005, momentum=0.9)
 
-    # Train and validate the model
     model = train_and_validate(model, train_loader, valid_loader, criterion, optimizer, num_epochs)
 
-    # Test the model
     test_model(model, test_loader)
 
-    # Measure inference time using a sample batch from the training loader
     data_iter = iter(train_loader)
     images, _ = next(data_iter)
     images = images.to(device)
