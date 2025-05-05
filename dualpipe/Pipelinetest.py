@@ -11,24 +11,18 @@ from fairscale.nn import Pipe
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
-##################################
-# Data Loader Helper Functions   #
-##################################
 def get_train_valid_loader(data_dir, batch_size, augment, random_seed, valid_size=0.1, shuffle=True):
-    # Normalization for CIFAR-10 (for training and validation)
     normalize = transforms.Normalize(
         mean=[0.4914, 0.4822, 0.4465],
         std=[0.2023, 0.1994, 0.2010],
     )
     
-    # For validation, resize to 227x227 directly.
     valid_transform = transforms.Compose([
         transforms.Resize((227, 227)),
         transforms.ToTensor(),
         normalize,
     ])
     
-    # For training when augmentation is enabled, first resize to 256x256 then randomly crop to 227x227.
     if augment:
         train_transform = transforms.Compose([
             transforms.Resize((256, 256)),
@@ -83,9 +77,6 @@ def get_test_loader(data_dir, batch_size, shuffle=True):
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle)
     return test_loader
 
-##################################
-# AlexNet Model Definitions      #
-##################################
 class AlexNet(nn.Module):
     def __init__(self, num_classes=10):
         super(AlexNet, self).__init__()
@@ -144,9 +135,7 @@ class AlexNet(nn.Module):
         out = self.fc2(out)
         return out
 
-####################################
-# Partitioned AlexNet for Pipelining #
-####################################
+
 class AlexNetStage1(nn.Module):
     def __init__(self, original_model: AlexNet):
         super(AlexNetStage1, self).__init__()
@@ -178,52 +167,39 @@ class AlexNetStage2(nn.Module):
         x = self.fc2(x)
         return x
 
-##########################################
-# Pipeline Training Main Function        #
-##########################################
+
 def main():
-    # Hyper-parameters and settings.
     class Args:
         data_dir = "./data"
-        batch_size = 128       # Global batch size.
+        batch_size = 128    
         num_classes = 10
         num_epochs = 20
         lr = 0.005
-        num_chunks = 4         # Number of micro-batches.
+        num_chunks = 4      
     args = Args()
 
-    # Specify the devices for the pipeline (2 GPUs in this case).
     devices = ["cuda:0", "cuda:1"]
 
-    # Prepare the data loaders.
     train_loader, _ = get_train_valid_loader(args.data_dir, args.batch_size, augment=True, random_seed=42)
     test_loader = get_test_loader(args.data_dir, args.batch_size)
 
-    # Build the original AlexNet and partition it into two stages.
     original_model = AlexNet(num_classes=args.num_classes)
     stage1 = AlexNetStage1(original_model).to(devices[0])
     stage2 = AlexNetStage2(original_model).to(devices[1])
     model_seq = nn.Sequential(stage1, stage2)
 
-    # Wrap the sequential model in FairScale's Pipe with an explicit balance.
-    # Here, balance=[1, 1] assigns one module per device.
+
     pipeline_model = Pipe(model_seq, balance=[1, 1], devices=devices, chunks=args.num_chunks)
 
-    # Setup the optimizer.
     optimizer = optim.SGD(pipeline_model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.005)
 
-    # Set the model to training mode.
     pipeline_model.train()
 
-    # Training loop.
     for epoch in range(args.num_epochs):
         for i, (images, labels) in enumerate(train_loader):
-            # Move the input images to the first device.
             images = images.to(devices[0])
-            # Since the final output is on the last device, move labels there.
             labels = labels.to(devices[-1])
             optimizer.zero_grad()
-            # FairScale's Pipe handles splitting the batch into micro-batches.
             outputs = pipeline_model(images)
             loss = nn.CrossEntropyLoss()(outputs, labels)
             loss.backward()

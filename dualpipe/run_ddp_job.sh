@@ -30,5 +30,4 @@ else
     pip install torch torchvision fairscale --upgrade
 fi
 
-# Simply run the pipeline script directly.
-time python main.py
+time python Pipelinetest.py
