@@ -1,7 +1,7 @@
 # HPMLProject
 
-[text](alexnetMOE.py) -- first checkpoint
+[link to script](alexnetMOE.py) -- first checkpoint
 
-[text](pipeline.py) -- second checkpoint
+[link to script](pipeline.py) -- second checkpoint
 
-[text](pipeline_plus_mixedprecision.py) -- third checkpoint
+[link to script](pipeline_plus_mixedprecision.py) -- third checkpoint
