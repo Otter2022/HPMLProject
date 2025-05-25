@@ -274,11 +274,15 @@ def main():
         for i, (images, labels) in enumerate(train_loader):
             images = images.to("cuda:0")
             labels = labels.to("cuda:1")
-
+            
             optimizer.zero_grad()
             with autocast():
                 outputs = pipe_model(images)
                 loss = criterion(outputs, labels)
+            # Scale the loss and backpropagate
+            # This is where mixed precision comes into play
+            # The scaler will handle the scaling of gradients
+            # and the optimizer step
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
