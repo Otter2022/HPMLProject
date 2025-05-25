@@ -11,7 +11,9 @@ from fairscale.nn import Pipe
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
-
+# CIFAR-100 dataset loader with data augmentation and normalization
+# This code is adapted from the torchvision CIFAR-100 example
+# and modified to include a mixture of experts (MoE) model
 def get_train_valid_loader(data_dir, batch_size, augment, random_seed, valid_size=0.1, shuffle=True):
     normalize = transforms.Normalize(
         mean=[0.5071, 0.4865, 0.4409],
@@ -60,8 +62,8 @@ def get_train_valid_loader(data_dir, batch_size, augment, random_seed, valid_siz
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, sampler=valid_sampler)
     return train_loader, valid_loader
 
+
 def get_test_loader(data_dir, batch_size, shuffle=True):
-    # CIFAR-100 statistics
     normalize = transforms.Normalize(
         mean=[0.5071, 0.4865, 0.4409],
         std=[0.2673, 0.2564, 0.2761],
@@ -94,6 +96,7 @@ def evaluate(model, loader, device0="cuda:0", device1="cuda:1"):
     model.train()
     return 100.0 * correct / total
 
+# Define the AlexNet model with a mixture of experts (MoE) architecture
 class AlexNetMoELossFree(nn.Module):
     def __init__(self, num_classes=100, num_experts=3, expert_hidden=4096):
         super().__init__()
@@ -168,7 +171,15 @@ class AlexNetMoELossFree(nn.Module):
                 self.expert_bias[i] += self.gamma
 
 #######################################################
-# 2) Split into two pipeline stages for FairScale Pipe #
+# 2) Split into two pipeline stages for FairScale Pipe(Gpipe, https://arxiv.org/abs/1811.06965)
+# Define stages 1 to n here where n is the number of  
+# devices used in the pipeline. Each stage will   
+# contain a subset of the model's layers. in mine, 
+# stage 1 contains the feature extractor and the first 
+# fully connected layer, and stage 2 contains the gating 
+# and experts. The output of stage 1 is the input to stage 2. 
+# this is kind of dumb because that first stage is much heavier
+# than the second stage, but this is an example of how to do it.
 #######################################################
 class MoEStage1(nn.Module):
     def __init__(self, moe_model: AlexNetMoELossFree):
@@ -222,7 +233,9 @@ def build_moe_pipeline(num_gpus=2, chunks=4, **moe_kwargs):
     s1   = MoEStage1(base).to("cuda:0")
     s2   = MoEStage2(base).to("cuda:1")
 
+    # Ensure the stages are on the correct devices
     model = nn.Sequential(s1, s2)
+    # Ensure the model is on the correct device
     pipe  = Pipe(
         model,
         balance=[1, 1],
@@ -257,6 +270,7 @@ def main():
     scaler = GradScaler()  
     for epoch in range(num_epochs):
         
+        # Reset the expert bias at the start of each epoch
         for i, (images, labels) in enumerate(train_loader):
             images = images.to("cuda:0")
             labels = labels.to("cuda:1")
@@ -268,7 +282,6 @@ def main():
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-
             stage2.update_expert_bias()
 
             if (i + 1) % 10 == 0:
